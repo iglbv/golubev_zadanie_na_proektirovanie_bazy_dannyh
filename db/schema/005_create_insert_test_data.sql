@@ -1,17 +1,13 @@
-create or replace procedure insert_test_data (value int) language plpgsql
-set
-  public as $$
+create or replace procedure insert_test_data (value int) language plpgsql as $$
 declare
     v_n     int := value;
     v_pool  int;
     v_now   timestamp := localtimestamp;
     v_today date      := current_date;
-    v_lo    timestamp := localtimestamp - interval '180 days';
+    v_lo    timestamp := date_trunc('month', localtimestamp) - interval '5 months';
     v_hi    timestamp := localtimestamp - interval '2 hours';
 
     v_coef_min         numeric := 0.1;
-    v_coef_max         numeric := 0.5;
-    v_coef_step        numeric := 0.05;
     v_min_order_amount numeric := 910;
 
     v_cat_ids    uuid[];
@@ -746,10 +742,19 @@ begin
         left join tmp_month m on m.courier_id = c.courier_id;
 
         update tmp_courier c
-           set coef = least(v_coef_max, c.coef + v_coef_step)
-          from tmp_month m
+           set coef = case
+                          when coalesce(m.cnt, 0) <= 150 then 0.1
+                          when m.cnt <= 250 then 0.2
+                          when m.cnt <= 500 then 0.3
+                          else 0.5
+                      end
+          from (
+              select t.courier_id,
+                     mm.cnt
+              from tmp_courier t
+              left join tmp_month mm on mm.courier_id = t.courier_id
+          ) m
          where m.courier_id = c.courier_id
-           and m.cnt > 0
            and (
                c.dismissal_date is null
                or c.dismissal_date >= v_month_end

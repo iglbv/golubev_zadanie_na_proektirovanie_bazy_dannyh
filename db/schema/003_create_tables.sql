@@ -79,9 +79,7 @@ create table product (
     description text not null,
 
     check (price >= 0),
-    check (rating >= 0 and rating <= 5),
-
-    constraint unique_product_reastaurant unique (product_id, restaurant_id)
+    check (rating >= 0 and rating <= 5)
 );
 
 create table "order" (
@@ -118,8 +116,7 @@ create table "order" (
         or delivery_timestamp is not null
     ),
     constraint fk_order_client_address foreign key (client_id, address_id)
-        references client_address(client_id, address_id),
-    constraint unique_order_restaurant unique (order_id, restaurant_id)
+        references client_address(client_id, address_id)
 );
 
 create table payment (
@@ -133,6 +130,10 @@ create table payment (
 
     check (amount > 0)
 );
+
+create unique index payment_one_success_per_order
+    on payment (order_id)
+    where status = 'успех';
 
 create table review (
     review_id uuid primary key default exts.uuid_generate_v4(),
