@@ -59,7 +59,7 @@
 - amount - сумма конкретной оплаты.
 - transiction_id - ид оплаты во внешнем платежном сервисе.
 - transaction_timestamp - дата и время проведения транзакции.
-- status - enum-тип статуса оплаты - 'ожидает', 'оплачен', 'ошибка'.
+- status - enum-тип статуса оплаты - 'успех', 'ошибка', 'в_обработке'.
 ```
 
 **Где хранится тип оплаты — `payment` или `order`** (BR-8.6):
@@ -84,7 +84,11 @@ constraint fk_order_client_address foreign key (client_id, address_id)
 **Как обеспечено, что все блюда из `order.restaurant_id`:**
 
 ```
-[что сделал + почему]
+Обеспечено триггером trg_check_order_product_restaurant на вставку/обновление в order_structure.
+Сравнивает product.restaurant_id с order.restaurant_id.
+Так же добавлены защитные триггеры:
+trg_prevent_order_restaurant_change - нельзя сменить ресторан заказа, если в нём есть блюда другого ресторана.
+trg_prevent_product_restaurant_change - нельзя перенести блюдо в другой ресторан, если оно уже входит в заказы прежнего ресторана.
 ```
 
 ### Ловушка 4: `review` — полиморфизм (BR-9.1)
@@ -92,9 +96,10 @@ constraint fk_order_client_address foreign key (client_id, address_id)
 **Как реализована валидность `review.entity_id`:**
 
 ```
-[что сделал: полиморфизм / нормализация / гибрид.
-Если полиморфизм — обоснуй, почему нет FK.
-Если нормализация — обоснуй, почему выбрал этот путь.]
+Полиморфизм: пара (entity_id, entity_type) без внешнего ключа на entity_id.
+BR-9.6 формулирует агрегаты через entity_type и entity_id.
+Триггер trg_check_review_eligibility обеспечивает целостность: заказ из order_id существует, а client_id отзыв совпадает с клиентом заказа. у заказа entity_id равен order_id, у ресторана entity_id равен order.restaurant_id, блюдо присутствует в order_structure этого заказа.
+Также, unique (order_id, entity_id, entity_type) - не более одного отзыва на объект в заказе - BR-9.5.
 ```
 
 ---
@@ -105,8 +110,25 @@ constraint fk_order_client_address foreign key (client_id, address_id)
 
 | Таблица | Столбец | Условие | BR | Обоснование |
 |---|---|---|---|---|
-|---|---|---|---|---|
-|---|---|---|---|---|
+| `restaurant` | `rating` | `rating >= 0 AND rating <= 5` | BR-4.2 | задаёт диапазон рейтинга ресторана |
+| `restaurant` | `work_start`, `work_end` | `work_end > work_start` | BR-4.4 | время закрытия позже времени открытия |
+| `product` | `price` | `price >= 0` | BR-5.3 | цена блюда неотрицательна |
+| `product` | `rating` | `rating >= 0 AND rating <= 5` | BR-5.4 | диапазон рейтинга блюда |
+| `courier` | `coefficient` | `coefficient >= 0.1 AND coefficient <= 0.5` | BR-6.4 | коэффициент от 0.1 до 0.5 включительно |
+| `courier` | `status`, `dismissal_date` | `status <> 'уволен' OR dismissal_date IS NOT NULL` | BR-6.3 | уволенный обязан иметь дату увольнения, работающий - не обязан |
+| `courier_pay` | `amount` | `amount >= 0` | BR-10.4 | зарплата неотрицательна |
+| `courier_pay` | `coefficient_used` | `>= 0.1 AND <= 0.5` | BR-6.4, BR-10.2 | применённый коэффициент - тот же коэффициент курьера, диапазон тот же |
+| `courier_pay` | `month` | `month >= 1 AND month <= 12` | BR-10.2 (п. 4) | запись содержит "год, месяц"; месяц - число от 1 до 12 |
+| `courier_pay` | `year` | `year > 0` | BR-11.6 | технический параметр домена "год" |
+| `order` | `order_amount` | `order_amount >= 0` | BR-7.10, BR-5.3 | сумма без комиссии - стоимость блюд, цены неотрицательны. Перекрывается `check_min_order_amount` |
+| `order` | `commission` | `commission = round(order_amount * 0.10, 2)` | BR-1.4, BR-7.10 | комиссия - ровно 10% от суммы без комиссии |
+| `order` | `total_amount` | `total_amount = order_amount + commission` | BR-7.10 | общая сумма = сумма без комиссии + комиссия |
+| `order` | `total_amount` | `total_amount >= 1000` | BR-1.8, BR-7.11 | минимальная сумма заказа |
+| `order` | `delivery_timestamp` | `delivery_timestamp IS NULL OR delivery_timestamp >= order_timestamp` | BR-7.13 | доставка не раньше создания |
+| `order` | `status`, `delivery_timestamp` | `status <> 'доставлен' OR delivery_timestamp IS NOT NULL` | BR-7.12 | у доставленного заказа время доставки заполнено |
+| `order_structure` | `quantity` | `quantity > 0` | BR-7.15 | количество положительное (тип `numeric` - может быть дробным) |
+| `payment` | `amount` | `amount > 0` | BR-8.4, BR-7.11 | сумма попытки равна общей сумме заказа, а она не меньше 1000 |
+| `review` | `rating` | `rating >= 1 AND rating <= 5` | BR-9.4 | рейтинг отзыва от 1 до 5 |
 
 ---
 
@@ -114,8 +136,15 @@ constraint fk_order_client_address foreign key (client_id, address_id)
 
 | Таблица | Столбцы | BR | Обоснование |
 |---|---|---|---|
-|---|---|---|---|
-|---|---|---|---|
+| `client` | `login` | BR-2.2 | логин уникален |
+| `client` | `phone_number` | BR-2.2 | телефон уникален |
+| `restaurant` | `address_id` | BR-3.3, BR-3.4 | два ресторана не делят один адрес |
+| `payment` | `transaction_id` | BR-8.3 | идентификатор транзакции внешний и уникален |
+| `payment` | `order_id` WHERE `status = 'успех'` (частичный уникальный индекс `payment_one_success_per_order`) | BR-8.1 | у заказа может быть много попыток оплаты, но успешная - не более одной |
+| `review` | `order_id, entity_id, entity_type` | BR-9.5 | не более одного отзыва на объект в рамках заказа |
+| `client_address` (PK) | `client_id, address_id` | BR-2.5 | один адрес нельзя привязать к клиенту дважды |
+| `order_structure` (PK) | `order_id, product_id` | BR-7.16 | блюдо не повторяется в заказе, вместо этого растёт количество |
+| `courier_pay` (PK) | `year, month, courier_id` | BR-10.3 | ровно одна запись за месяц у одного курьера |
 
 Если UNIQUE частичный (с `WHERE`) — укажи условие в столбце «Столбцы» или отдельной строкой.
 
@@ -125,8 +154,24 @@ constraint fk_order_client_address foreign key (client_id, address_id)
 
 | Таблица | Столбцы | → Таблица | BR | Обоснование |
 |---|---|---|---|---|
-|---|---|---|---|---|
-|---|---|---|---|---|
+| `client_address` | `client_id` | `client` | BR-2.4, BR-3.5 | адрес привязан к существующему клиенту. `ON DELETE CASCADE` удаляет только строку связи, сам адрес остаётся |
+| `client_address` | `address_id` | `address` | BR-2.4, BR-3.5 | без каскада: адрес, привязанный к клиенту, удалить нельзя |
+| `restaurant` | `address_id` | `address` | BR-3.3, BR-3.5 | у ресторана ровно один адрес; адрес не удаляется |
+| `product` | `restaurant_id` | `restaurant` | BR-5.1 | блюдо принадлежит ровно одному ресторану |
+| `product` | `product_category_id` | `product_category` | BR-5.1, BR-5.7 | блюдо принадлежит ровно одной категории из справочника |
+| `courier_pay` | `courier_id` | `courier` | BR-10.2 (п. 4) | запись выплаты относится к курьеру |
+| `order` | `client_id` | `client` | BR-7.2 | заказ оформляет клиент |
+| `order` | `restaurant_id` | `restaurant` | BR-7.2 | заказ привязан к одному ресторану |
+| `order` | `courier_id` | `courier` | BR-7.5 | доставку выполняет курьер |
+| `order` | `address_id` | `address` | BR-7.4 | заказ доставляется по адресу |
+| `order` | `client_id, address_id` | `client_address(client_id, address_id)` | BR-7.4 | адрес доставки - один из адресов именно этого клиента (ловушка 2) |
+| `order_structure` | `order_id` | `order` | BR-7.14 | позиция принадлежит заказу |
+| `order_structure` | `product_id` | `product` | BR-7.14 | позиция - существующее блюдо |
+| `payment` | `order_id` | `order` | BR-8.1 | попытка оплаты относится к заказу |
+| `review` | `client_id` | `client` | BR-9.2 | отзыв оставляет клиент |
+| `review` | `order_id` | `order` | BR-9.2 | отзыв всегда связан с конкретным заказом |
+ 
+`review.entity_id` внешнего ключа не имеет осознанно (ловушка 4).
 
 Если FK составной — выпиши все столбцы.
 
@@ -143,8 +188,12 @@ constraint fk_order_client_address foreign key (client_id, address_id)
 
 | Таблица | Столбец | BR | Обоснование |
 |---|---|---|---|
-|---|---|---|---|
-|---|---|---|---|
+| `order` | `courier_id` | BR-7.5, BR-11.3 | доставку выполняет курьер, поэтому курьер назначается при создании заказа. Заказ без курьера схема не допускает |
+| `order` | `pay_status` | BR-7.8 | у заказа всегда есть агрегированный статус оплаты |
+| `order` | `description` | BR-11.3 | не указано как необязательное |
+| `product` | `description` | BR-5.2, BR-11.3, BR-5.6 | описание в списке атрибутов блюда, необязательной названа только фотография |
+| `restaurant` | `company_details` | BR-4.1, BR-4.5 | реквизиты входят в атрибуты ресторана |
+| `review` | `description` | BR-9.3 | у отзыва есть текст; необязательной названа только фотография |
 
 ---
 
@@ -152,8 +201,13 @@ constraint fk_order_client_address foreign key (client_id, address_id)
 
 | Таблица | Столбец | BR | Почему NULL |
 |---|---|---|---|
-|---|---|---|---|
-|---|---|---|---|
+| `address` | `apartment_office` | BR-3.2 | частные дома и отдельные входы |
+| `product` | `photo_url` | BR-5.6 | фотография необязательна |
+| `review` | `photo_url` | BR-9.3 | фотография отзыва необязательна |
+| `courier` | `dismissal_date` | BR-6.3 | у работающего курьера даты увольнения нет |
+| `order` | `delivery_timestamp` | BR-7.12 | до статуса `'доставлен'` время доставки может быть пустым |
+| `product` | `rating` | BR-9.7 | при отсутствии отзывов рейтинг - `NULL`, а не 0 |
+| `restaurant` | `rating` | BR-9.7 | при отсутствии отзывов рейтинг - `NULL`, а не 0  |
 
 ---
 
@@ -161,10 +215,15 @@ constraint fk_order_client_address foreign key (client_id, address_id)
 
 | Таблица | Столбец | Что | Обоснование |
 |---|---|---|---|
-|---|---|---|---|
-|---|---|---|---|
+| все | `*_id` (PK) | `exts.uuid_generate_v4()` | BR-11.1 |
+| `courier` | `coefficient` | `0.1` | BR-6.5: коэффициент нового курьера - 0.1 |
+| `order` | `order_timestamp` | `current_timestamp` | BR-7.1: фиксируется время создания, BR-11.2: время сервера |
+| `payment` | `transaction_timestamp` | `current_timestamp` | BR-8.2: время транзакции |
+| `review` | `review_timestamp` | `current_timestamp` | BR-9.3: дата отзыва |
+ 
 
 Если `commission` и/или `total_amount` — `GENERATED ALWAYS AS` — обоснуй здесь. Если обычные поля с `CHECK` — тоже обоснуй выбор.
+`commission` и `total_amount` - обычные столбцы с `CHECK` (BR-1.4, BR-7.10), а `order_amount` - обычный столбец, который триггером сверяется с суммой позиций: сгенерированный столбец не может ссылаться на другую таблицу (`order_structure`). Значения передаются явно при вставке, а формулы гарантируют `CHECK`-и и отложенные триггеры.
 
 ---
 
@@ -173,14 +232,18 @@ constraint fk_order_client_address foreign key (client_id, address_id)
 Короткое обоснование, что все таблицы в 3НФ:
 
 ```
-[Своими словами: все неключевые атрибуты зависят от полного PK (2НФ);
-нет транзитивных зависимостей (3НФ).
+Все таблицы в 3НФ: неключевые атрибуты зависят от всего первичного ключа (2НФ) и не зависят друг от друга
+(3НФ). Составные ключи у client_address, order_structure и courier_pay - в них нет атрибутов, зависящих от части ключа.
+Рестораны, адреса, категории, клиенты и курьеры вынесены в отдельные таблицы, повторяющихся групп нет.
 
 Особые случаи:
-- order.commission = 10% от order_amount — вычисляемое. Что сделал и почему.
-- order.total_amount = order_amount + commission — вычисляемое. Что сделал и почему.
-- product.rating и restaurant.rating — агрегаты, поддерживаются триггером rating_change. Это осознанная денормализация для скорости чтения — обоснуй.
-- review.entity_id + entity_type — полиморфизм. Не нарушает 3НФ, но требует обоснования (см. ловушку 4).]
+- order.commission = 10% от order_amount — вычисляемое. Хранится как обычный столбец с CHECK (BR-1.4), финансовая величина фиксируется в заказе на момент создания, а CHECK не даёт ей разойтись с формулой.
+- order.total_amount = order_amount + commission — вычисляемое. По той же причине. На него опираются платёж (BR-8.4), минимальная сумма (BR-7.11) и статистика, поэтому значение фиксируется в заказе.
+- product.rating и restaurant.rating — агрегаты, поддерживаются триггером rating_change (BR-9.6, BR-9.7). Это осознанная денормализация для скорости чтения — рейтинг блюда и ресторана нужен в выдаче постоянно, пересчёт на каждое чтение был бы дорогим.
+- review.entity_id + entity_type — полиморфизм. Не нарушает 3НФ, обоснование - см. ловушку 4.
+- order.order_amount - сумма позиций (BR-7.10). Хранится, потому что это сумма на момент заказа, а цена блюда
+  потом может измениться. Согласованность с позициями контролируют отложенные триггеры, цену заказанного блюда менять нельзя.
+- order.pay_status - агрегат по попыткам оплаты (BR-7.8, BR-8.7), поддерживается триггером.
 ```
 
 
