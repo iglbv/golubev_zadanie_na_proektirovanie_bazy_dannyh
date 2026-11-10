@@ -69,19 +69,18 @@ begin
     )
     select v_cat_ids[i],
            (
-               select string_agg(
+               select array_to_string(array(
+                   select
                    substr(
                        'абвгдеёжзийклмнопрстуфхцчшщъыьэюя',
                        floor(random() * 33)::int + 1,
                        1
-                   ),
-                   ''
-               )
+                   )
                from generate_series(
                    1,
                    1 + floor(random() * 100)::int + i * 0
                )
-           )
+               ), ''))
     from generate_series(1, v_n) as gs(i);
 
     select jsonb_agg(to_jsonb(s))
@@ -108,48 +107,45 @@ begin
                v_today - (60 + floor(random() * 121))::int as hire_date,
                random() as u,
                (
-                   select string_agg(
+                   select array_to_string(array(
+                       select
                        substr(
                            'абвгдеёжзийклмнопрстуфхцчшщъыьэюя',
                            floor(random() * 33)::int + 1,
                            1
-                       ),
-                       ''
-                   )
+                       )
                    from generate_series(
                        1,
                        1 + floor(random() * 49)::int + i * 0
                    )
-               ) as last_name,
+                   ), '')) as last_name,
                (
-                   select string_agg(
+                   select array_to_string(array(
+                       select
                        substr(
                            'абвгдеёжзийклмнопрстуфхцчшщъыьэюя',
                            floor(random() * 33)::int + 1,
                            1
-                       ),
-                       ''
-                   )
+                       )
                    from generate_series(
                        1,
                        1 + floor(random() * 49)::int + i * 0
                    )
-               ) as first_name,
+                   ), '')) as first_name,
                case
                    when random() < 0.5 then (
-                       select string_agg(
+                       select array_to_string(array(
+                           select
                            substr(
                                'абвгдеёжзийклмнопрстуфхцчшщъыьэюя',
                                floor(random() * 33)::int + 1,
                                1
-                           ),
-                           ''
-                       )
+                           )
                        from generate_series(
                            1,
                            1 + floor(random() * 49)::int + i * 0
                        )
-                   )
+                       ), ''))
                end as middle_name,
                case
                    when i > 1 and random() < 0.2
@@ -220,19 +216,18 @@ begin
     )
     select v_addr_ids[i],
            (
-               select string_agg(
+               select array_to_string(array(
+                   select
                    substr(
                        'абвгдеёжзийклмнопрстуфхцчшщъыьэюя',
                        floor(random() * 33)::int + 1,
                        1
-                   ),
-                   ''
-               )
+                   )
                from generate_series(
                    1,
                    1 + floor(random() * 100)::int + i * 0
                )
-           ),
+               ), '')),
            (1 + floor(random() * 150))::int::text,
            case
                when i > v_n and random() < 0.8
@@ -257,19 +252,19 @@ begin
     select v_rest_ids[s.i],
            s.restaurant_name,
            v_addr_ids[s.i],
-           (
-               select string_agg(
-                   substr(
+           array_to_string(
+               array(
+                   select substr(
                        'абвгдеёжзийклмнопрстуфхцчшщъыьэюя',
                        floor(random() * 33)::int + 1,
                        1
-                   ),
-                   ''
-               )
-               from generate_series(
-                   1,
-                   15 + floor(random() * 36)::int + s.i * 0
-               )
+                   )
+                   from generate_series(
+                       1,
+                       15 + floor(random() * 36)::int + s.i * 0
+                   )
+               ),
+               ''
            ),
            make_time(s.h1, s.m1, 0),
            make_time(s.h2, s.m2, 0),
@@ -282,19 +277,18 @@ begin
     from (
         select i as i,
                (
-                   select string_agg(
+                   select array_to_string(array(
+                       select
                        substr(
                            'абвгдеёжзийклмнопрстуфхцчшщъыьэюя',
                            floor(random() * 33)::int + 1,
                            1
-                       ),
-                       ''
-                   )
+                       )
                    from generate_series(
                        1,
                        1 + floor(random() * 100)::int + i * 0
                    )
-               ) as restaurant_name,
+                   ), '')) as restaurant_name,
                7 + floor(random() * 5)::int as h1,
                20 + floor(random() * 4)::int as h2,
                (array[0, 30])[1 + floor(random() * 2)::int] as m1,
@@ -302,11 +296,10 @@ begin
                floor(random() * 1e10)::bigint as inn,
                floor(random() * 1e13)::bigint as ogrn,
                (
-                   select string_agg(
-                       floor(random() * 10 + i * 0)::int::text,
-                       ''
-                   )
-                   from generate_series(1, 20)
+                   select array_to_string(array(
+                       select floor(random() * 10 + i * 0)::int::text
+                       from generate_series(1, 20)
+                   ), '')
                ) as settlement_account,
                case
                    when random() < 0.85
@@ -371,19 +364,18 @@ begin
     )
     select c.client_id,
            (
-               select string_agg(
+               select array_to_string(array(
+                   select
                    substr(
                        'абвгдеёжзийклмнопрстуфхцчшщъыьэюя',
                        floor(random() * 33)::int + 1,
                        1
-                   ),
-                   ''
-               )
+                   )
                from generate_series(
                    1,
                    1 + floor(random() * 33)::int + c.idx * 0
                )
-           ) || '_' || substr(replace(c.client_id::text, '-', ''), 1, 16),
+               ), '')) || '_' || substr(replace(c.client_id::text, '-', ''), 1, 16),
            md5(random()::text),
            '+7' || (
                v_phone_next
@@ -424,19 +416,18 @@ begin
     )
     select v_prod_ids[s.k],
            (
-               select string_agg(
+               select array_to_string(array(
+                   select
                    substr(
                        'абвгдеёжзийклмнопрстуфхцчшщъыьэюя',
                        floor(random() * 33)::int + 1,
                        1
-                   ),
-                   ''
-               )
+                   )
                from generate_series(
                    1,
                    1 + floor(random() * 100)::int + s.k * 0
                )
-           ),
+               ), '')),
            v_cat_ids[s.c],
            case
                when random() < 0.2
@@ -462,19 +453,18 @@ begin
                ]
            end,
            (
-               select string_agg(
+               select array_to_string(array(
+                   select
                    substr(
                        'абвгдеёжзийклмнопрстуфхцчшщъыьэюя',
                        floor(random() * 33)::int + 1,
                        1
-                   ),
-                   ''
-               )
+                   )
                from generate_series(
                    1,
                    15 + floor(random() * 36)::int + s.k * 0
                )
-           )
+               ), ''))
     from (
         select k,
                (k - 1) / 5 + 1 as r,
@@ -614,19 +604,18 @@ begin
                        else v_hi
                    end as hi,
                    (
-                       select string_agg(
+                       select array_to_string(array(
+                           select
                            substr(
                                'абвгдеёжзийклмнопрстуфхцчшщъыьэюя',
                                floor(random() * 33)::int + 1,
                                1
-                           ),
-                           ''
-                       )
+                           )
                        from generate_series(
                            1,
                            10 + floor(random() * 31)::int + o.idx * 0
                        )
-                   ) as description
+                       ), '')) as description
             from jsonb_to_recordset(v_order_seed_rows) as o(
                 idx int, order_id uuid, r_idx int, cl_idx int, c_idx int,
                 cnt int, sft int, u_ts double precision, u_dl double precision,
@@ -786,19 +775,18 @@ begin
                else 'блюдо'::review_entity_type
            end as entity_type,
            (
-               select string_agg(
+               select array_to_string(array(
+                   select
                    substr(
                        'абвгдеёжзийклмнопрстуфхцчшщъыьэюя',
                        floor(random() * 33)::int + 1,
                        1
-                   ),
-                   ''
-               )
+                   )
                from generate_series(
                    1,
                    15 + floor(random() * 46)::int + x.ci * 0
                )
-           ) as description,
+               ), '')) as description,
            case
                when random() < 0.2
                then 'https://cdn.foodexpress.ru/img/'

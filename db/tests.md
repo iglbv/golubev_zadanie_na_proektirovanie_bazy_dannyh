@@ -76,7 +76,7 @@ ORDER BY table_name;
 ```
 
 Ожидается: `address`, `client`, `client_address`, `courier`, `courier_pay`, `order`, `order_structure`, `payment`, `product`, `product_category`, `restaurant`, `review` (12 + N штук).
-Факт: `address`, `client`, `client_address`, `courier`, `courier_pay`, `how_much_money`, `order`, `order_structure`, `payment`, `product`, `product_category`, `restaurant`, `review` (12 + 1 представление).
+Факт: `address`, `client`, `client_address`, `courier`, `courier_name`, `courier_pay`, `how_much_money`, `order`, `order_structure`, `payment`, `product`, `product_category`, `restaurant`, `restaurant_legal_details`, `review` (14 + 1 представление).
 Вердикт: `OK`.
 
 ### B.4. Все PK — `uuid`
@@ -120,7 +120,7 @@ ORDER BY tbl, conname;
 ```
 
 Ожидается: не менее 15 FK, все из erd.md.
-Факт: 16 FK
+Факт: 18 FK
 Вердикт: `OK`.
 
 ### B.7. Пароль — MD5
@@ -753,7 +753,7 @@ RESET ROLE;
 ```
 
 Ожидается: 12 + N (количество таблиц).
-Факт: 13 (12 + 1 view).
+Факт: 15 (14 + 1 view).
 Вердикт: `OK`.
 
 ### G.4. `pg_catalog` читается под `inspector`
@@ -766,7 +766,7 @@ RESET ROLE;
 ```
 
 Ожидается: 12 + N.
-Факт: 12
+Факт: 14
 Вердикт: `OK`.
 
 ### G.5. Все процедуры/функции работают под `inspector`
