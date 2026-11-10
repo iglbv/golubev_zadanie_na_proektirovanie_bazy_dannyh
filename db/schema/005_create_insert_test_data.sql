@@ -18,6 +18,13 @@ declare
     v_rest_ids   uuid[];
     v_client_ids uuid[];
     v_prod_ids   uuid[];
+    v_courier_rows jsonb;
+    v_client_rows  jsonb;
+    v_order_seed_rows jsonb;
+    v_line_rows jsonb;
+    v_order_rows jsonb;
+    v_delivery_rows jsonb;
+    v_review_rows jsonb;
 
     v_cour_active courier_status[];
     v_cat_cnt     int;
@@ -52,9 +59,6 @@ begin
         raise exception 'закончились свободные номера телефонов для клиентов';
     end if;
 
-    drop table if exists tmp_courier, tmp_client, tmp_ord, tmp_line, tmp_order,
-                         tmp_deliv, tmp_review, tmp_month;
-
     select array_agg(exts.uuid_generate_v4() order by i)
       into v_cat_ids
       from generate_series(1, v_n) as gs(i);
@@ -75,12 +79,14 @@ begin
                )
                from generate_series(
                    1,
-                   5 + floor(random() * 16)::int + i * 0
+                   1 + floor(random() * 100)::int + i * 0
                )
            )
     from generate_series(1, v_n) as gs(i);
 
-    create temp table tmp_courier as
+    select jsonb_agg(to_jsonb(s))
+      into v_courier_rows
+      from (
     select s.idx,
            s.courier_id,
            s.status,
@@ -101,7 +107,7 @@ begin
                )
                from generate_series(
                    1,
-                   15 + floor(random() * 16)::int + s.idx * 0
+                   1 + floor(random() * 150)::int + s.idx * 0
                )
            ) as fio,
            '+79' || lpad((900000000 + s.idx)::text, 9, '0') as phone_number,
@@ -119,7 +125,8 @@ begin
                    ]
                end as status
         from generate_series(1, v_n) as gs(i)
-    ) s;
+    ) s
+      ) s;
 
     insert into courier (
         courier_id,
@@ -137,13 +144,19 @@ begin
            hire_date,
            dismissal_date,
            v_coef_min
-    from tmp_courier;
+    from jsonb_to_recordset(v_courier_rows) as c(
+        idx int, courier_id uuid, status courier_status, hire_date date,
+        dismissal_date date, fio varchar, phone_number varchar, coef numeric
+    );
 
     select array_agg(courier_id order by idx),
            array_agg(hire_date order by idx),
            array_agg(dismissal_date order by idx)
       into v_cour_ids, v_cour_hire, v_cour_dism
-      from tmp_courier
+      from jsonb_to_recordset(v_courier_rows) as c(
+          idx int, courier_id uuid, status courier_status, hire_date date,
+          dismissal_date date, fio varchar, phone_number varchar, coef numeric
+      )
       where status != 'уволен';
 
     select array_agg(exts.uuid_generate_v4() order by i)
@@ -168,7 +181,7 @@ begin
                )
                from generate_series(
                    1,
-                   5 + floor(random() * 16)::int + i * 0
+                   1 + floor(random() * 100)::int + i * 0
                )
            ),
            (1 + floor(random() * 150))::int::text,
@@ -229,7 +242,7 @@ begin
                    )
                    from generate_series(
                        1,
-                       10 + floor(random() * 21)::int + i * 0
+                       1 + floor(random() * 100)::int + i * 0
                    )
                ) as restaurant_name,
                7 + floor(random() * 5)::int as h1,
@@ -256,12 +269,15 @@ begin
       into v_client_ids
       from generate_series(1, v_n) as gs(i);
 
-    create temp table tmp_client as
+    select jsonb_agg(to_jsonb(c))
+      into v_client_rows
+      from (
     select i as idx,
            v_client_ids[i] as client_id,
            1 + floor(random() * 3)::int as cnt,
            floor(random() * v_pool)::int as win_start
-    from generate_series(1, v_n) as gs(i);
+    from generate_series(1, v_n) as gs(i)
+      ) c;
 
     insert into client (
         client_id,
@@ -281,7 +297,7 @@ begin
                )
                from generate_series(
                    1,
-                   8 + floor(random() * 13)::int + c.idx * 0
+                   1 + floor(random() * 33)::int + c.idx * 0
                )
            ) || '_' || substr(replace(c.client_id::text, '-', ''), 1, 16),
            md5(random()::text),
@@ -290,7 +306,9 @@ begin
                + (c.idx - 1)::bigint * 3
                + floor(random() * 3)::bigint
            )::text
-    from tmp_client c;
+    from jsonb_to_recordset(v_client_rows) as c(
+        idx int, client_id uuid, cnt int, win_start int
+    );
 
     insert into client_address (
         client_id,
@@ -300,7 +318,9 @@ begin
            v_addr_ids[
                v_n + 1 + (c.win_start + t) % v_pool
            ]
-    from tmp_client c
+    from jsonb_to_recordset(v_client_rows) as c(
+        idx int, client_id uuid, cnt int, win_start int
+    )
     cross join lateral generate_series(0, c.cnt - 1) as gs(t);
 
     select array_agg(exts.uuid_generate_v4() order by i)
@@ -330,7 +350,7 @@ begin
                )
                from generate_series(
                    1,
-                   8 + floor(random() * 18)::int + s.k * 0
+                   1 + floor(random() * 100)::int + s.k * 0
                )
            ),
            v_cat_ids[s.c],
@@ -378,7 +398,9 @@ begin
         from generate_series(1, 5 * v_n) as gs(k)
     ) s;
 
-    create temp table tmp_ord as
+    select jsonb_agg(to_jsonb(o))
+      into v_order_seed_rows
+      from (
     select i as idx,
            exts.uuid_generate_v4() as order_id,
            1 + floor(random() * v_n)::int as r_idx,
@@ -399,16 +421,23 @@ begin
                    )::int
                ]
            end as status
-    from generate_series(1, 5 * v_n) as gs(i);
+    from generate_series(1, 5 * v_n) as gs(i)
+      ) o;
 
-    create temp table tmp_line as
+    select jsonb_agg(to_jsonb(l))
+      into v_line_rows
+      from (
     select o.idx,
            o.order_id,
            x.pos,
            x.product_id,
            x.quantity,
            p.price
-    from tmp_ord o
+    from jsonb_to_recordset(v_order_seed_rows) as o(
+        idx int, order_id uuid, r_idx int, cl_idx int, c_idx int,
+        cnt int, sft int, u_ts double precision, u_dl double precision,
+        status order_status
+    )
     cross join lateral (
         select t as pos,
                v_prod_ids[
@@ -417,26 +446,39 @@ begin
                1 + floor(random() * 3)::int as quantity
         from generate_series(0, o.cnt - 1) as gs(t)
     ) x
-    join product p on p.product_id = x.product_id;
+    join product p on p.product_id = x.product_id
+      ) l;
 
-    update tmp_line l
-       set quantity = l.quantity
-           + ceil((v_min_order_amount - s.amt) / l.price)::int
+    select jsonb_agg(to_jsonb(l))
+      into v_line_rows
       from (
-          select order_id,
-                 sum(price * quantity) as amt
-          from tmp_line
-          group by order_id
-          having sum(price * quantity) < v_min_order_amount
-      ) s
-     where l.order_id = s.order_id
-       and l.pos = 0;
+    select l.idx,
+           l.order_id,
+           l.pos,
+           l.product_id,
+           l.quantity + case
+               when l.pos = 0 and a.amount < v_min_order_amount
+               then ceil((v_min_order_amount - a.amount) / l.price)::int
+               else 0
+           end as quantity,
+           l.price
+    from jsonb_to_recordset(v_line_rows) as l(
+        idx int, order_id uuid, pos int, product_id uuid, quantity int,
+        price numeric
+    )
+    join (
+        select order_id, sum(price * quantity) as amount
+        from jsonb_to_recordset(v_line_rows) as line(
+            idx int, order_id uuid, pos int, product_id uuid, quantity int,
+            price numeric
+        )
+        group by order_id
+    ) a on a.order_id = l.order_id
+      ) l;
 
-    analyze tmp_client;
-    analyze tmp_ord;
-    analyze tmp_line;
-
-    create temp table tmp_order as
+    select jsonb_agg(to_jsonb(m))
+      into v_order_rows
+      from (
     select m.idx,
            m.order_id,
            m.client_id,
@@ -501,18 +543,26 @@ begin
                            10 + floor(random() * 31)::int + o.idx * 0
                        )
                    ) as description
-            from tmp_ord o
-            join tmp_client cl on cl.idx = o.cl_idx
+            from jsonb_to_recordset(v_order_seed_rows) as o(
+                idx int, order_id uuid, r_idx int, cl_idx int, c_idx int,
+                cnt int, sft int, u_ts double precision, u_dl double precision,
+                status order_status
+            )
+            join jsonb_to_recordset(v_client_rows) as cl(
+                idx int, client_id uuid, cnt int, win_start int
+            ) on cl.idx = o.cl_idx
             join (
                 select order_id,
                        sum(price * quantity)::numeric(12,2) as order_amount
-                from tmp_line
+                from jsonb_to_recordset(v_line_rows) as line(
+                    idx int, order_id uuid, pos int, product_id uuid,
+                    quantity int, price numeric
+                )
                 group by order_id
             ) a on a.order_id = o.order_id
         ) b
-    ) m;
-
-    analyze tmp_order;
+    ) m
+      ) m;
 
     insert into "order" (
         order_id,
@@ -542,7 +592,13 @@ begin
            status,
            'оплачен',
            description
-    from tmp_order;
+    from jsonb_to_recordset(v_order_rows) as o(
+        idx int, order_id uuid, client_id uuid, restaurant_id uuid,
+        courier_id uuid, address_id uuid, status order_status,
+        order_timestamp timestamp, delivery_timestamp timestamp,
+        order_amount numeric, commission numeric, total_amount numeric,
+        description text
+    );
 
     insert into order_structure (
         order_id,
@@ -552,7 +608,10 @@ begin
     select order_id,
            product_id,
            quantity
-    from tmp_line;
+    from jsonb_to_recordset(v_line_rows) as l(
+        idx int, order_id uuid, pos int, product_id uuid, quantity int,
+        price numeric
+    );
 
     insert into payment (
         payment_id,
@@ -577,14 +636,28 @@ begin
            o.order_timestamp
                + (1 + floor(random() * 10)::int) * interval '1 minute',
            'успех'::payment_status
-    from tmp_order o;
+    from jsonb_to_recordset(v_order_rows) as o(
+        idx int, order_id uuid, client_id uuid, restaurant_id uuid,
+        courier_id uuid, address_id uuid, status order_status,
+        order_timestamp timestamp, delivery_timestamp timestamp,
+        order_amount numeric, commission numeric, total_amount numeric,
+        description text
+    );
 
     select count(*)
       into v_deliv_cnt
-      from tmp_order
+      from jsonb_to_recordset(v_order_rows) as o(
+          idx int, order_id uuid, client_id uuid, restaurant_id uuid,
+          courier_id uuid, address_id uuid, status order_status,
+          order_timestamp timestamp, delivery_timestamp timestamp,
+          order_amount numeric, commission numeric, total_amount numeric,
+          description text
+      )
      where status = 'доставлен';
 
-    create temp table tmp_deliv as
+    select jsonb_agg(to_jsonb(d))
+      into v_delivery_rows
+      from (
     select row_number() over (order by o.idx) as rn,
            o.order_id,
            o.client_id,
@@ -592,13 +665,24 @@ begin
            o.delivery_timestamp,
            t.cnt,
            floor(random() * (t.cnt + 2))::int as sh
-    from tmp_order o
-    join tmp_ord t on t.order_id = o.order_id
-    where o.status = 'доставлен';
+    from jsonb_to_recordset(v_order_rows) as o(
+        idx int, order_id uuid, client_id uuid, restaurant_id uuid,
+        courier_id uuid, address_id uuid, status order_status,
+        order_timestamp timestamp, delivery_timestamp timestamp,
+        order_amount numeric, commission numeric, total_amount numeric,
+        description text
+    )
+    join jsonb_to_recordset(v_order_seed_rows) as t(
+        idx int, order_id uuid, r_idx int, cl_idx int, c_idx int,
+        cnt int, sft int, u_ts double precision, u_dl double precision,
+        status order_status
+    ) on t.order_id = o.order_id
+    where o.status = 'доставлен'
+      ) d;
 
-    analyze tmp_deliv;
-
-    create temp table tmp_review as
+    select jsonb_agg(to_jsonb(r))
+      into v_review_rows
+      from (
     select exts.uuid_generate_v4() as review_id,
            x.client_id,
            x.order_id,
@@ -646,12 +730,19 @@ begin
                1 + floor(power(random(), 0.5) * 5)::int as rating,
                random() as u_ts
         from generate_series(1, 5 * v_n) as gs(k)
-        join tmp_deliv d
+        join jsonb_to_recordset(v_delivery_rows) as d(
+            rn bigint, order_id uuid, client_id uuid, restaurant_id uuid,
+            delivery_timestamp timestamp, cnt int, sh int
+        )
           on d.rn = (k - 1) % v_deliv_cnt + 1
     ) x
-    left join tmp_line l
+    left join jsonb_to_recordset(v_line_rows) as l(
+        idx int, order_id uuid, pos int, product_id uuid, quantity int,
+        price numeric
+    )
       on l.order_id = x.order_id
-     and l.pos = x.ci - 2;
+     and l.pos = x.ci - 2
+      ) r;
 
     insert into review (
         review_id,
@@ -673,14 +764,24 @@ begin
            description,
            photo_url,
            rating
-    from tmp_review;
+    from jsonb_to_recordset(v_review_rows) as r(
+        review_id uuid, client_id uuid, order_id uuid,
+        review_timestamp timestamp, entity_id uuid,
+        entity_type review_entity_type, description text, photo_url text,
+        rating int
+    );
 
     update product p
        set rating = r.avg_rating
       from (
           select entity_id,
                  round(avg(rating), 2) as avg_rating
-          from tmp_review
+          from jsonb_to_recordset(v_review_rows) as r(
+              review_id uuid, client_id uuid, order_id uuid,
+              review_timestamp timestamp, entity_id uuid,
+              entity_type review_entity_type, description text,
+              photo_url text, rating int
+          )
           where entity_type = 'блюдо'
           group by entity_id
       ) r
@@ -691,17 +792,16 @@ begin
       from (
           select entity_id,
                  round(avg(rating), 2) as avg_rating
-          from tmp_review
+          from jsonb_to_recordset(v_review_rows) as r(
+              review_id uuid, client_id uuid, order_id uuid,
+              review_timestamp timestamp, entity_id uuid,
+              entity_type review_entity_type, description text,
+              photo_url text, rating int
+          )
           where entity_type = 'ресторан'
           group by entity_id
       ) r
      where t.restaurant_id = r.entity_id;
-
-    create temp table tmp_month (
-        courier_id uuid,
-        sum_comm numeric,
-        cnt int
-    );
 
     for v_k in reverse 5..0 loop
 
@@ -713,19 +813,6 @@ begin
             v_month_start + interval '1 month'
         )::date;
 
-        truncate tmp_month;
-
-        insert into tmp_month
-        select courier_id,
-               sum(commission),
-               count(*)
-        from tmp_order
-        where status = 'доставлен'
-          and courier_id is not null
-          and delivery_timestamp >= v_month_start
-          and delivery_timestamp < v_month_end
-        group by courier_id;
-
         insert into courier_pay (
             year,
             month,
@@ -736,39 +823,76 @@ begin
         select extract(year from v_month_start)::int,
                extract(month from v_month_start)::int,
                c.courier_id,
-               round(c.coef * coalesce(m.sum_comm, 0), 2),
-               c.coef
-        from tmp_courier c
-        left join tmp_month m on m.courier_id = c.courier_id;
+               round(c.coefficient * coalesce(m.sum_comm, 0), 2),
+               c.coefficient
+        from courier c
+        left join (
+            select courier_id,
+                   sum(commission) as sum_comm,
+                   count(*) as cnt
+            from jsonb_to_recordset(v_order_rows) as o(
+                idx int, order_id uuid, client_id uuid, restaurant_id uuid,
+                courier_id uuid, address_id uuid, status order_status,
+                order_timestamp timestamp, delivery_timestamp timestamp,
+                order_amount numeric, commission numeric, total_amount numeric,
+                description text
+            )
+            where status = 'доставлен'
+              and courier_id is not null
+              and delivery_timestamp >= v_month_start
+              and delivery_timestamp < v_month_end
+            group by courier_id
+        ) m on m.courier_id = c.courier_id
+        where exists (
+            select 1
+            from jsonb_to_recordset(v_courier_rows) as generated(
+                idx int, courier_id uuid, status courier_status,
+                hire_date date, dismissal_date date, fio varchar,
+                phone_number varchar, coef numeric
+            )
+            where generated.courier_id = c.courier_id
+        );
 
-        update tmp_courier c
-           set coef = case
+        update courier c
+           set coefficient = case
                           when coalesce(m.cnt, 0) <= 150 then 0.1
                           when m.cnt <= 250 then 0.2
                           when m.cnt <= 500 then 0.3
                           else 0.5
                       end
           from (
-              select t.courier_id,
-                     mm.cnt
-              from tmp_courier t
-              left join tmp_month mm on mm.courier_id = t.courier_id
+              select generated.courier_id,
+                     generated.dismissal_date,
+                     orders.cnt
+              from jsonb_to_recordset(v_courier_rows) as generated(
+                  idx int, courier_id uuid, status courier_status,
+                  hire_date date, dismissal_date date, fio varchar,
+                  phone_number varchar, coef numeric
+              )
+              left join (
+                  select courier_id, count(*) as cnt
+                  from jsonb_to_recordset(v_order_rows) as o(
+                      idx int, order_id uuid, client_id uuid,
+                      restaurant_id uuid, courier_id uuid, address_id uuid,
+                      status order_status, order_timestamp timestamp,
+                      delivery_timestamp timestamp, order_amount numeric,
+                      commission numeric, total_amount numeric,
+                      description text
+                  )
+                  where status = 'доставлен'
+                    and courier_id is not null
+                    and delivery_timestamp >= v_month_start
+                    and delivery_timestamp < v_month_end
+                  group by courier_id
+              ) orders on orders.courier_id = generated.courier_id
           ) m
          where m.courier_id = c.courier_id
            and (
-               c.dismissal_date is null
-               or c.dismissal_date >= v_month_end
+               m.dismissal_date is null
+               or m.dismissal_date >= v_month_end
            );
 
     end loop;
-
-    update courier c
-       set coefficient = t.coef
-      from tmp_courier t
-     where t.courier_id = c.courier_id;
-
-    drop table if exists tmp_courier, tmp_client, tmp_ord, tmp_line,
-                         tmp_order, tmp_deliv, tmp_review, tmp_month;
 
     raise notice
         'insert_test_data(%): добавлено заказов - %, отзывов - %, записей courier_pay - %',

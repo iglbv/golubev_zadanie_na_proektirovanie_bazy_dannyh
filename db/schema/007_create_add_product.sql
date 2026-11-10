@@ -10,20 +10,7 @@ create or replace procedure add_product (
 ) language plpgsql as $$
 declare
     v_constraint text;
-    v_column     text;
 begin
-    if p_name is null or btrim(p_name) = '' then
-        raise exception 'Не удалось добавить блюдо: укажите название блюда.';
-    end if;
-
-    if p_price is null then
-        raise exception 'Не удалось добавить блюдо: укажите цену блюда.';
-    end if;
-
-    if p_description is null or btrim(p_description) = '' then
-        raise exception 'Не удалось добавить блюдо: укажите описание блюда.';
-    end if;
-
     if not exists (
         select 1
         from restaurant
@@ -73,14 +60,5 @@ exception
         raise exception
             'Не удалось добавить блюдо: нарушено ограничение "%" (цена не может быть отрицательной, рейтинг - от 0 до 5).',
             v_constraint;
-
-    when not_null_violation then
-        get stacked diagnostics v_column = column_name;
-        raise exception
-            'Не удалось добавить блюдо: не заполнено обязательное поле "%".',
-            v_column;
-
-    when others then
-        raise;
 end;
 $$;

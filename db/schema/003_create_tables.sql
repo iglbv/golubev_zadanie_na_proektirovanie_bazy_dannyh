@@ -27,7 +27,7 @@ create table restaurant (
     work_start time not null,
     work_end time not null,
     company_details text not null,
-    rating numeric,
+    rating numeric(3,2),
     status restaurant_status not null,
 
     constraint check_rating_range check (rating >= 0 and rating <= 5),
@@ -41,7 +41,7 @@ create table courier (
     status courier_status not null,
     hire_date date not null,
     dismissal_date date,
-    coefficient numeric not null default 0.1,
+    coefficient numeric(2,1) not null default 0.1,
 
     constraint check_courier_status check (status != 'уволен' or dismissal_date is not null),
     check (coefficient >= 0.1 and coefficient <= 0.5)
@@ -51,8 +51,8 @@ create table courier_pay (
     year integer not null,
     month integer not null,
     courier_id uuid not null references courier(courier_id),
-    amount numeric not null,
-    coefficient_used numeric not null,
+    amount numeric(12,2) not null,
+    coefficient_used numeric(2,1) not null,
 
     primary key (year, month, courier_id),
 
@@ -71,10 +71,10 @@ create table product (
     product_id uuid primary key default exts.uuid_generate_v4(),
     product_name varchar(100) not null,
     product_category_id uuid not null references product_category(product_category_id),
-    price numeric not null,
+    price numeric(12,2) not null,
     restaurant_id uuid not null references restaurant(restaurant_id),
     photo_url text,
-    rating numeric,
+    rating numeric(3,2),
     status product_status not null,
     description text not null,
 
@@ -144,7 +144,7 @@ create table review (
     order_id uuid not null references "order"(order_id),
     description text not null,
     photo_url text,
-    rating numeric not null,
+    rating numeric(3,2) not null,
 
     constraint check_review_rating check (
         rating >= 1 and rating <= 5
@@ -156,7 +156,7 @@ create table review (
 create table order_structure (
     order_id uuid not null references "order"(order_id),
     product_id uuid not null references product(product_id),
-    quantity numeric not null,
+    quantity numeric(10,3) not null,
 
     primary key (order_id, product_id),
 
