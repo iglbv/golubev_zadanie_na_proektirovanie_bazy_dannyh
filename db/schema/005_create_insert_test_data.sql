@@ -96,20 +96,10 @@ begin
                then s.hire_date + 10
                     + floor(s.u * (v_today - s.hire_date - 10))::int
            end as dismissal_date,
-           (
-               select string_agg(
-                   substr(
-                       'абвгдеёжзийклмнопрстуфхцчшщъыьэюя',
-                       floor(random() * 33)::int + 1,
-                       1
-                   ),
-                   ''
-               )
-               from generate_series(
-                   1,
-                   1 + floor(random() * 150)::int + s.idx * 0
-               )
-           ) as fio,
+           concat_ws(' ', s.last_name, s.first_name, s.middle_name) as fio,
+           s.last_name,
+           s.first_name,
+           s.middle_name,
            '+79' || lpad((900000000 + s.idx)::text, 9, '0') as phone_number,
            v_coef_min as coef
     from (
@@ -117,6 +107,50 @@ begin
                exts.uuid_generate_v4() as courier_id,
                v_today - (60 + floor(random() * 121))::int as hire_date,
                random() as u,
+               (
+                   select string_agg(
+                       substr(
+                           'абвгдеёжзийклмнопрстуфхцчшщъыьэюя',
+                           floor(random() * 33)::int + 1,
+                           1
+                       ),
+                       ''
+                   )
+                   from generate_series(
+                       1,
+                       1 + floor(random() * 49)::int + i * 0
+                   )
+               ) as last_name,
+               (
+                   select string_agg(
+                       substr(
+                           'абвгдеёжзийклмнопрстуфхцчшщъыьэюя',
+                           floor(random() * 33)::int + 1,
+                           1
+                       ),
+                       ''
+                   )
+                   from generate_series(
+                       1,
+                       1 + floor(random() * 49)::int + i * 0
+                   )
+               ) as first_name,
+               case
+                   when random() < 0.5 then (
+                       select string_agg(
+                           substr(
+                               'абвгдеёжзийклмнопрстуфхцчшщъыьэюя',
+                               floor(random() * 33)::int + 1,
+                               1
+                           ),
+                           ''
+                       )
+                       from generate_series(
+                           1,
+                           1 + floor(random() * 49)::int + i * 0
+                       )
+                   )
+               end as middle_name,
                case
                    when i > 1 and random() < 0.2
                    then 'уволен'::courier_status
@@ -146,7 +180,21 @@ begin
            v_coef_min
     from jsonb_to_recordset(v_courier_rows) as c(
         idx int, courier_id uuid, status courier_status, hire_date date,
-        dismissal_date date, fio varchar, phone_number varchar, coef numeric
+        dismissal_date date, fio varchar, last_name varchar, first_name varchar,
+        middle_name varchar, phone_number varchar, coef numeric
+    );
+
+    insert into courier_name (
+        courier_id,
+        last_name,
+        first_name,
+        middle_name
+    )
+    select courier_id, last_name, first_name, middle_name
+    from jsonb_to_recordset(v_courier_rows) as c(
+        idx int, courier_id uuid, status courier_status, hire_date date,
+        dismissal_date date, fio varchar, last_name varchar, first_name varchar,
+        middle_name varchar, phone_number varchar, coef numeric
     );
 
     select array_agg(courier_id order by idx),
@@ -155,7 +203,8 @@ begin
       into v_cour_ids, v_cour_hire, v_cour_dism
       from jsonb_to_recordset(v_courier_rows) as c(
           idx int, courier_id uuid, status courier_status, hire_date date,
-          dismissal_date date, fio varchar, phone_number varchar, coef numeric
+          dismissal_date date, fio varchar, last_name varchar, first_name varchar,
+          middle_name varchar, phone_number varchar, coef numeric
       )
       where status != 'уволен';
 
@@ -227,7 +276,8 @@ begin
            'ООО «' || s.restaurant_name || '», ИНН '
                || lpad(s.inn::text, 10, '0')
                || ', ОГРН '
-               || lpad(s.ogrn::text, 13, '0'),
+               || lpad(s.ogrn::text, 13, '0')
+               || ', р/с ' || s.settlement_account,
            s.st
     from (
         select i as i,
@@ -251,6 +301,13 @@ begin
                (array[0, 30])[1 + floor(random() * 2)::int] as m2,
                floor(random() * 1e10)::bigint as inn,
                floor(random() * 1e13)::bigint as ogrn,
+               (
+                   select string_agg(
+                       floor(random() * 10 + i * 0)::int::text,
+                       ''
+                   )
+                   from generate_series(1, 20)
+               ) as settlement_account,
                case
                    when random() < 0.85
                    then 'активен'::restaurant_status
@@ -264,6 +321,33 @@ begin
                end as st
         from generate_series(1, v_n) as gs(i)
     ) s;
+
+    insert into restaurant_legal_details (
+        restaurant_id,
+        legal_name,
+        inn,
+        ogrn,
+        settlement_account
+    )
+    select r.restaurant_id,
+           parsed.parts[1],
+           parsed.parts[2],
+           parsed.parts[3],
+           parsed.parts[4]
+    from restaurant r
+    cross join lateral regexp_match(
+        r.company_details,
+        '^(.+), ИНН ([0-9]{10}), ОГРН ([0-9]{13}), р/с ([0-9]{20})$'
+    ) as parsed(parts)
+    where r.restaurant_id = any(v_rest_ids);
+
+    if (
+        select count(*)
+        from restaurant_legal_details
+        where restaurant_id = any(v_rest_ids)
+    ) <> v_n then
+        raise exception 'не удалось нормализовать реквизиты ресторанов';
+    end if;
 
     select array_agg(exts.uuid_generate_v4() order by i)
       into v_client_ids
@@ -848,6 +932,7 @@ begin
             from jsonb_to_recordset(v_courier_rows) as generated(
                 idx int, courier_id uuid, status courier_status,
                 hire_date date, dismissal_date date, fio varchar,
+                last_name varchar, first_name varchar, middle_name varchar,
                 phone_number varchar, coef numeric
             )
             where generated.courier_id = c.courier_id
@@ -867,6 +952,7 @@ begin
               from jsonb_to_recordset(v_courier_rows) as generated(
                   idx int, courier_id uuid, status courier_status,
                   hire_date date, dismissal_date date, fio varchar,
+                  last_name varchar, first_name varchar, middle_name varchar,
                   phone_number varchar, coef numeric
               )
               left join (

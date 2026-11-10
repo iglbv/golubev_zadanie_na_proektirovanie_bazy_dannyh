@@ -34,6 +34,14 @@ create table restaurant (
     constraint check_working_hours check (work_end > work_start)
 );
 
+create table restaurant_legal_details (
+    restaurant_id uuid primary key references restaurant(restaurant_id) on delete cascade,
+    legal_name varchar(150) not null,
+    inn varchar(12) not null,
+    ogrn varchar(15) not null,
+    settlement_account varchar(20) not null
+);
+
 create table courier (
     courier_id uuid primary key default exts.uuid_generate_v4(),
     FIO varchar(150) not null,
@@ -45,6 +53,13 @@ create table courier (
 
     constraint check_courier_status check (status != 'уволен' or dismissal_date is not null),
     check (coefficient >= 0.1 and coefficient <= 0.5)
+);
+
+create table courier_name (
+    courier_id uuid primary key references courier(courier_id) on delete cascade,
+    last_name varchar(49) not null,
+    first_name varchar(49) not null,
+    middle_name varchar(49)
 );
 
 create table courier_pay (
